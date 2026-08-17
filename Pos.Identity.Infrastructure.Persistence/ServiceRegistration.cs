@@ -137,7 +137,7 @@ namespace Pos.Identity.Infrastructure.Persistence
 
             options.DisableAccessTokenEncryption();
 
-            options.SetAccessTokenLifetime(TimeSpan.FromMinutes(5));
+            options.SetAccessTokenLifetime(TimeSpan.FromMinutes(20));
             options.SetRefreshTokenLifetime(TimeSpan.FromDays(7));
 
             // Development only.

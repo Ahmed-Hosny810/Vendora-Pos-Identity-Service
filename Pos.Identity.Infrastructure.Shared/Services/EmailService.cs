@@ -34,7 +34,7 @@ namespace Pos.Identity.Infrastructure.Shared.Services
         {
             _logger.LogInformation("Sending confirmation email requested for Email: {Email} .UserId: {userId} ",toEmail,userId);
             var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-            var confirmationLink = $"{_emailSettings.AppBaseUrl}/api/{_emailSettings.ApiVersion}/Authentication/ConfirmEmail?UserId={userId}&Token={encodedToken}";
+            var confirmationLink = $"{_emailSettings.AppBaseUrl}/api/v{_emailSettings.ApiVersion}/Authentication/ConfirmEmail?UserId={userId}&Token={encodedToken}";
             var expiryHours = _emailSettings.ConfirmationTokenExpiryHours;
 
             var subject = "Confirm Your Email Address";
@@ -76,7 +76,7 @@ namespace Pos.Identity.Infrastructure.Shared.Services
         {
             _logger.LogInformation("Sending Password Reset email requested for Email: {Email} .UserId: {userId}", toEmail, userId);
             var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-            var resetLink = $"{_emailSettings.AppBaseUrl}/api/{_emailSettings.ApiVersion}/Authentication/reset-password?UserId={userId}&Token={encodedToken}";
+            var resetLink = $"{_emailSettings.AppBaseUrl}/api/v{_emailSettings.ApiVersion}/Authentication/reset-password?UserId={userId}&Token={encodedToken}";
             var expiryHours = _emailSettings.PasswordResetTokenExpiryHours;
 
             var subject = "Reset Your Password";

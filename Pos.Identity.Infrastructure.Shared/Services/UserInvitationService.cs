@@ -113,7 +113,7 @@ namespace Pos.Identity.Infrastructure.Shared.Services
 
             var portalName = GetPortalName(targetUser);
 
-            await _emailService.SendUserInvitationEmailAsync(
+            await _emailService.ResendUserInvitationEmailAsync(
                 targetUser.Email!,
                 targetUser.FullName,
                 temporaryPassword,

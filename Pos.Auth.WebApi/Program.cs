@@ -1,4 +1,3 @@
-using Asp.Versioning;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Pos.Auth.WebApi.Middlewares;
@@ -14,7 +13,6 @@ using Pos.Identity.Infrastructure.Shared.Seeders;
 using Pos.Identity.WebApi.Extensions;
 using Pos.Identity.WebApi.Middlewares;
 using Serilog;
-using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Pos.Auth.WebApi
 {
@@ -53,7 +51,9 @@ namespace Pos.Auth.WebApi
             builder.Services.AddPersistenceServices(builder.Configuration);
             builder.Services.AddSharedInfrastructureServices(builder.Configuration);
             builder.Services.AddApplicationLayer();
+
             builder.Services.AddOpenIddictServer(builder.Configuration);
+            builder.Services.AddOpenIddictValidation();
             builder.Services.AddSocialAuthentication(builder.Configuration);
 
             // Add app Authorization Policies

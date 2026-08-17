@@ -189,25 +189,32 @@ namespace Pos.Identity.WebApi.Controllers.V1
             if (oidcRequest.IsRefreshTokenGrantType())
             {
                 var result = await HttpContext.AuthenticateAsync(
-                    OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+                     OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+                if (!result.Succeeded || result.Principal is null)
+                    return InvalidGrant("The refresh token is invalid.");
 
                 var userId = result.Principal.GetClaim(Claims.Subject);
-                var statusResult = await _mediator.Send(
-                    new GetUserStatusQuery { UserId = userId });
 
-                if (!statusResult.Data.IsActive)
-                    return Forbid(
-                        new AuthenticationProperties(new Dictionary<string, string>
-                        {
-                            [OpenIddictServerAspNetCoreConstants.Properties.Error]
-                                = Errors.InvalidGrant,
-                            [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription]
-                                = "This account has been deactivated."
-                        }),
-                        OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+                if (string.IsNullOrWhiteSpace(userId))
+                    return InvalidGrant("The refresh token has no user.");
 
-                return SignIn(result.Principal,
+                var userResult = await _mediator.Send(
+                    new GetUserForTokenQuery(userId));
+
+                if (userResult.Data == null)
+                    return InvalidGrant("The user no longer exists.");
+
+                if (!userResult.Data.IsActive)
+                    return InvalidGrant("This account has been deactivated.");
+
+                var tokenPrincipal = BuildPrincipalCore(userResult.Data);
+
+                tokenPrincipal.SetScopes(result.Principal.GetScopes());
+
+                return SignIn(tokenPrincipal,
                     OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
             }
 
             return Unauthorized();

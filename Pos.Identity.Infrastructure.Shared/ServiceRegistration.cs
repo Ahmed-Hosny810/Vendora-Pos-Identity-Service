@@ -31,6 +31,7 @@ namespace Pos.Identity.Infrastructure.Shared
             services.AddScoped<IUserAuthenticationService, UserAuthenticationService>();
             services.AddScoped<IPlatformAdminService, PlatformAdminService>();
             services.AddScoped<ITenantUserService, TenantUserService>();
+            services.AddScoped<IUserInvitationService, UserInvitationService>();
             //seeder
             services.AddScoped<IdentityRoleSeeder>();
 
