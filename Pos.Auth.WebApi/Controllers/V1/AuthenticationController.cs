@@ -1,5 +1,4 @@
 ﻿using Asp.Versioning;
-using Azure.Core;
 using MediatR;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
@@ -21,11 +20,12 @@ using Pos.Identity.Application.Features.Authentication.Commands.ResetPassword;
 using Pos.Identity.Application.Features.Authentication.Commands.SocialLogin;
 using Pos.Identity.Application.Features.Authentication.DTOS;
 using Pos.Identity.Application.Features.Authentication.Querys.GetById;
-using Pos.Identity.Application.Features.Authentication.Querys.GetUserStatus;
 using Pos.Identity.Application.Wrappers;
+using Pos.Identity.Application.Interfaces.Services;
 using Pos.Identity.Domain.Constants;
 using Pos.Identity.Infrastructure.Persistence.Constants;
 using System.Security.Claims;
+using System.Globalization;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Pos.Identity.WebApi.Controllers.V1
@@ -33,9 +33,20 @@ namespace Pos.Identity.WebApi.Controllers.V1
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
     [ApiVersion("1.0")]
-    public class AuthenticationController(IMediator mediator) : ControllerBase
+    public class AuthenticationController : ControllerBase
     {
-        private readonly IMediator _mediator = mediator;
+        private readonly IMediator _mediator;
+        private readonly ITenantSubscriptionAccessService _subscriptionAccessService;
+
+        public AuthenticationController(
+        IMediator mediator,
+        ITenantSubscriptionAccessService subscriptionAccessService)
+        {
+            _mediator = mediator;
+            _subscriptionAccessService = subscriptionAccessService;
+        }
+
+
 
         [HttpPost("Register")]
         public async Task<ActionResult<Response<string>>> Register([FromBody] RegisterUserCommand command)
@@ -174,10 +185,16 @@ namespace Pos.Identity.WebApi.Controllers.V1
                 var userResult = await _mediator.Send(
                     new GetUserForTokenQuery(userId));
 
+                if (userResult.Data == null)
+                    return InvalidGrant("The user no longer exists.");
+
                 if (!userResult.Data.IsActive)
                     return InvalidGrant("This account has been deactivated.");
 
-                var tokenPrincipal = BuildPrincipalCore(userResult.Data);
+                if (!userResult.Data.IsActive)
+                    return InvalidGrant("This account has been deactivated.");
+
+                var tokenPrincipal = await BuildTokenPrincipalAsync(userResult.Data);
 
                 tokenPrincipal.SetScopes(result.Principal.GetScopes());
 
@@ -208,7 +225,7 @@ namespace Pos.Identity.WebApi.Controllers.V1
                 if (!userResult.Data.IsActive)
                     return InvalidGrant("This account has been deactivated.");
 
-                var tokenPrincipal = BuildPrincipalCore(userResult.Data);
+                var tokenPrincipal = await BuildTokenPrincipalAsync(userResult.Data);
 
                 tokenPrincipal.SetScopes(result.Principal.GetScopes());
 
@@ -342,6 +359,44 @@ namespace Pos.Identity.WebApi.Controllers.V1
 
             principal.SetScopes(request.GetScopes()
                 .Where(supportedScopes.Contains));
+        }
+
+        private async Task<ClaimsPrincipal> BuildTokenPrincipalAsync(UserForTokenResult data)
+        {
+            var principal = BuildPrincipalCore(data);
+
+            // Onboarding users have not been assigned to a tenant yet.
+            if (data.UserType != UserTypes.Tenant || !data.TenantId.HasValue)
+                return principal;
+
+            var access = await _subscriptionAccessService.GetAsync(
+                data.TenantId.Value, HttpContext.RequestAborted);
+
+            var identity = (ClaimsIdentity)principal.Identity!;
+
+            identity.AddClaim(new Claim("business_access", access.IsAllowed ? "true" : "false")
+                .SetDestinations(Destinations.AccessToken));
+
+            identity.AddClaim(new Claim("subscription_access_valid_until",
+                access.ValidUntilUtc.ToString("O", CultureInfo.InvariantCulture))
+                .SetDestinations(Destinations.AccessToken));
+
+            if (access.SubscriptionEndsAt.HasValue)
+                identity.AddClaim(new Claim("subscription_ends_at",
+                    access.SubscriptionEndsAt.Value.ToString("O", CultureInfo.InvariantCulture))
+                    .SetDestinations(Destinations.AccessToken));
+
+            // Limit token lifetime to 10 minutes or the access decision's remaining validity.
+            var remaining = access.ValidUntilUtc - DateTime.UtcNow;
+            var lifetime = TimeSpan.FromMinutes(10);
+
+            if (remaining < lifetime)
+                lifetime = remaining;
+
+            principal.SetAccessTokenLifetime(
+                lifetime > TimeSpan.Zero ? lifetime : TimeSpan.FromSeconds(1));
+
+            return principal;
         }
 
         private static ClaimsPrincipal BuildPrincipalCore(UserForTokenResult data)

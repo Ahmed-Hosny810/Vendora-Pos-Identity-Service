@@ -1,7 +1,4 @@
 ﻿using Pos.Identity.Application.Dtos;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace Pos.Identity.Application.Interfaces.Clients
 {
@@ -15,8 +12,12 @@ namespace Pos.Identity.Application.Interfaces.Clients
             IncreaseCashierUsageRequest request,
             CancellationToken cancellationToken);
 
-        Task<DecreaseCashierUsageResult> DecreaseCashierUsageAsync
-            (DecreaseCashierUsageRequest request,
+        Task<DecreaseCashierUsageResult> DecreaseCashierUsageAsync(
+            DecreaseCashierUsageRequest request,
+            CancellationToken cancellationToken);
+
+        Task<TenantSubscriptionAccessDto> GetSubscriptionAccessAsync(
+            Guid tenantId,
             CancellationToken cancellationToken);
     }
 }

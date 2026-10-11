@@ -1,4 +1,4 @@
-﻿using OpenIddict.Validation.AspNetCore;
+using OpenIddict.Validation.AspNetCore;
 using Pos.Identity.Application.Common.Security;
 using Pos.Identity.Domain.Constants;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -27,6 +27,7 @@ namespace Pos.Auth.WebApi.Policies
                     policy.RequireAuthenticatedUser();
                     policy.RequireClaim(CustomClaimTypes.UserType, UserTypes.PendingTenant);
                 });
+
 
                 options.AddPolicy("TenantUserOnly", policy =>
                 {

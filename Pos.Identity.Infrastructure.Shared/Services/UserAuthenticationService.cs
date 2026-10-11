@@ -55,6 +55,7 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                 UserType = UserTypes.PendingTenant,
                 TenantId = null,
                 IsActive = true,
+                EmailConfirmed=true,
                 CreatedAt = DateTime.UtcNow
             };
                 
@@ -73,8 +74,8 @@ namespace Pos.Identity.Infrastructure.Shared.Services
            "User registered successfully. UserId: {UserId} Email: {Email}",
            user.Id, email);
 
-            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            await _emailService.SendConfirmationEmailAsync(user.Email, user.Id, token);
+            //var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            //await _emailService.SendConfirmationEmailAsync(user.Email, user.Id, token);
 
             return new Response<string>(user.Id, "Registration successful. Please check your email to confirm your account.");
         }

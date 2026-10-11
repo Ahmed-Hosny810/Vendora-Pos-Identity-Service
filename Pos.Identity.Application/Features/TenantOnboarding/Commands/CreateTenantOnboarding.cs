@@ -64,6 +64,7 @@ namespace Pos.Identity.Application.Features.TenantOnboarding.Commands
             if (user.TenantId.HasValue)
                 throw new ApiException("User is already linked to a tenant.");
 
+
             _logger.LogInformation(
                 "Starting tenant onboarding. UserId: {UserId}, Email: {Email}",
                 user.Id,
@@ -128,7 +129,7 @@ namespace Pos.Identity.Application.Features.TenantOnboarding.Commands
                 {
                     TenantId = tenantResult.TenantId,
                 },
-                "Tenant onboarding completed successfully.");
+                "Tenant onboarding completed successfully. Refresh your access token before accessing tenant billing.");
         }
     }
 }

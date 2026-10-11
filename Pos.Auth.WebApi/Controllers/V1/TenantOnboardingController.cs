@@ -23,9 +23,9 @@ namespace Pos.Auth.WebApi.Controllers.V1
         }
 
         [HttpPost]
-        public async Task<ActionResult<Response<CreateTenantResult>>> Create([FromBody] CreateTenantOnboardingCommand command)
+        public async Task<ActionResult<Response<CreateTenantResult>>> Create([FromBody] CreateTenantOnboardingCommand command, CancellationToken cancellationToken)
         {
-          var result = await _mediator.Send(command);
+          var result = await _mediator.Send(command, cancellationToken);
           return Ok(result);
         }
     }

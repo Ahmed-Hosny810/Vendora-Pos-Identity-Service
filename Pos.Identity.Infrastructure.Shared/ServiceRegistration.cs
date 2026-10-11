@@ -34,11 +34,21 @@ namespace Pos.Identity.Infrastructure.Shared
             services.AddScoped<IUserInvitationService, UserInvitationService>();
             //seeder
             services.AddScoped<IdentityRoleSeeder>();
+            services.AddMemoryCache();
+            services.AddScoped<ITenantSubscriptionAccessService, TenantSubscriptionAccessService>();
+
+            services.Configure<InternalApiKeyOptions>(
+                     configuration.GetSection(nameof(InternalApiKeyOptions)));
 
             services.AddHttpClient<ITenantBillingClient, TenantBillingClient>(client =>
             {
                 client.BaseAddress = new Uri(
                     configuration["Services:TenantBilling:BaseUrl"]!);
+            })
+            .RedactLoggedHeaders(new[]
+            {
+                "X-Internal-Api-Key",
+                "Authorization"
             });
 
             return services;

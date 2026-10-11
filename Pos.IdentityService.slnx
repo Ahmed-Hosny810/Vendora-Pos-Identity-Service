@@ -10,4 +10,5 @@
   <Folder Name="/WebApi/">
     <Project Path="Pos.Auth.WebApi/Pos.Auth.WebApi.csproj" Id="c0bcca9b-fd3e-4448-b288-c8dfbfeee78c" />
   </Folder>
+  <Project Path="Pos.Identity.Tests/Pos.Identity.Tests.csproj" />
 </Solution>
