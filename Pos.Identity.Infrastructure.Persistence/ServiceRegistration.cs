@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +39,7 @@ namespace Pos.Identity.Infrastructure.Persistence
             }).AddEntityFrameworkStores<ApplicationDbContext>()
               .AddDefaultTokenProviders();
 
+            services.AddScoped<Pos.Identity.Application.Interfaces.Services.IUserNameLookupService, Pos.Identity.Infrastructure.Persistence.Services.UserNameLookupService>();
             services.AddHostedService<OpenIddictSeeder>();
 
             return services;

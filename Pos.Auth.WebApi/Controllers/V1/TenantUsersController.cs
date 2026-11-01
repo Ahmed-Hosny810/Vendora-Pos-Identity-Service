@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -20,6 +20,14 @@ namespace Pos.Auth.WebApi.Controllers.V1
         public TenantUsersController(IMediator mediator)
         {
             _mediator = mediator;
+        }
+
+        [HttpPost("names")]
+        public async Task<ActionResult<Response<IReadOnlyDictionary<Guid, string>>>> GetNames(
+            [FromBody] Pos.Identity.Application.Features.TenantUsers.Queries.GetUserNamesQuery query,
+            CancellationToken cancellationToken)
+        {
+            return Ok(await _mediator.Send(query, cancellationToken));
         }
 
         [HttpPost]
