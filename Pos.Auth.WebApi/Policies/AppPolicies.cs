@@ -11,6 +11,14 @@ namespace Pos.Auth.WebApi.Policies
         {
             services.AddAuthorization(options =>
             {
+                options.AddPolicy("NotificationRecipients.Read", policy =>
+                {
+                    policy.AuthenticationSchemes.Add(
+                        Pos.Auth.WebApi.Authentication.NotificationApiKeyAuthenticationHandler.SchemeName);
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireClaim("service", "NotificationService");
+                });
+
                 options.AddPolicy("BearerOnly", policy =>
                 {
                     policy.AuthenticationSchemes.Add(

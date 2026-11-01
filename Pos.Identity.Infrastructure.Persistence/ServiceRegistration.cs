@@ -40,6 +40,8 @@ namespace Pos.Identity.Infrastructure.Persistence
               .AddDefaultTokenProviders();
 
             services.AddScoped<Pos.Identity.Application.Interfaces.Services.IUserNameLookupService, Pos.Identity.Infrastructure.Persistence.Services.UserNameLookupService>();
+            services.AddScoped<Pos.Identity.Application.Interfaces.Services.INotificationRecipientService,
+                Pos.Identity.Infrastructure.Persistence.Services.NotificationRecipientService>();
             services.AddHostedService<OpenIddictSeeder>();
 
             return services;

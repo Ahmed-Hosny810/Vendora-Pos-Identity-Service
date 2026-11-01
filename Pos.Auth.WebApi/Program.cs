@@ -56,6 +56,13 @@ namespace Pos.Auth.WebApi
             builder.Services.AddOpenIddictValidation();
             builder.Services.AddSocialAuthentication(builder.Configuration);
 
+            builder.Services.Configure<Pos.Auth.WebApi.Authentication.NotificationApiKeyOptions>(
+                builder.Configuration.GetSection(Pos.Auth.WebApi.Authentication.NotificationApiKeyOptions.SectionName));
+            builder.Services.AddAuthentication()
+                .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+                    Pos.Auth.WebApi.Authentication.NotificationApiKeyAuthenticationHandler>(
+                    Pos.Auth.WebApi.Authentication.NotificationApiKeyAuthenticationHandler.SchemeName, _ => { });
+
             // Add app Authorization Policies
             builder.Services.AddAuthorizationPolicies();
 
