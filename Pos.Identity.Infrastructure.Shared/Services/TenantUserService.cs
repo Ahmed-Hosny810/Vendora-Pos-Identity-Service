@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Pos.Identity.Infrastructure.Persistence.Context;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Pos.Identity.Application.Dtos;
 using Pos.Identity.Application.Exceptions;
@@ -19,7 +20,8 @@ namespace Pos.Identity.Infrastructure.Shared.Services
         private readonly ILogger<TenantUserService> _logger;
         private readonly ICurrentUserService _currentUserService;
         private readonly ITenantBillingClient _tenantBillingClient;
-        private readonly IEmailService _emailService;
+        private readonly IEmailRequestService _emailRequestService;
+        private readonly ApplicationDbContext _context;
 
         public TenantUserService(
             UserManager<ApplicationUser> userManager,
@@ -27,14 +29,16 @@ namespace Pos.Identity.Infrastructure.Shared.Services
             ILogger<TenantUserService> logger,
             ICurrentUserService currentUserService, 
             ITenantBillingClient tenantBillingClient,
-            IEmailService emailService)
+            IEmailRequestService emailRequestService,
+            ApplicationDbContext context)
         {
             _userManager = userManager;
             _roleManager = roleManager;
             _logger = logger;
             _currentUserService = currentUserService;
             _tenantBillingClient = tenantBillingClient;
-            _emailService = emailService;
+            _emailRequestService = emailRequestService;
+            _context = context;
         }
 
         public async Task<CreateTenantUserResult> CreateTenantUserAsync(CreateTenantUserCommand request,CancellationToken cancellationToken)
@@ -146,7 +150,6 @@ namespace Pos.Identity.Infrastructure.Shared.Services
 
             var isCashier = request.Role == TenantRoles.Cashier;
             var cashierUsageIncreased = false;
-            var userCreated = false;
 
             try
             {
@@ -168,6 +171,8 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                     request.Email,
                     request.Role);
 
+                await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
                 var createResult = await _userManager.CreateAsync(user, temporaryPassword);
 
                 if (!createResult.Succeeded)
@@ -182,7 +187,6 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                     throw new ApiException($"Tenant user creation failed: {errors}");
                 }
 
-                userCreated = true;
 
                 var roleResult = await _userManager.AddToRoleAsync(user, request.Role);
 
@@ -199,11 +203,17 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                     throw new ApiException($"Adding role failed: {errors}");
                 }
 
-                await _emailService.SendTenantUserInvitationEmailAsync(
+                await _emailRequestService.RequestTenantUserInvitationEmailAsync(
+                    tenantId,
+                    user.Id,
                     user.Email!,
                     user.FullName,
                     temporaryPassword,
-                    temporaryPasswordExpiresAt);
+                    temporaryPasswordExpiresAt,
+                    cancellationToken);
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
 
                 _logger.LogInformation(
                     "Tenant user created successfully. UserId: {UserId}, TenantId: {TenantId}, Role: {Role}",
@@ -221,20 +231,7 @@ namespace Pos.Identity.Infrastructure.Shared.Services
             }
             catch
             {
-                if (userCreated)
-                {
-                    var deleteResult = await _userManager.DeleteAsync(user);
-
-                    if (!deleteResult.Succeeded)
-                    {
-                        var errors = string.Join(", ", deleteResult.Errors.Select(e => e.Description));
-
-                        _logger.LogError(
-                            "Failed to delete tenant user after creation failure. UserId: {UserId}, Errors: {Errors}",
-                            user.Id,
-                            errors);
-                    }
-                }
+                _context.ChangeTracker.Clear();
 
                 if (cashierUsageIncreased)
                 {

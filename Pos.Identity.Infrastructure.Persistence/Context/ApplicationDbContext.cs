@@ -1,4 +1,4 @@
-﻿using Pos.Identity.Domain.Models;
+using Pos.Identity.Domain.Models;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Pos.Identity.Infrastructure.Persistence.Context.DbConfigurations;
@@ -14,11 +14,14 @@ namespace Pos.Identity.Infrastructure.Persistence.Context
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
         {
         }
+        public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
             builder.UseOpenIddict();
             builder.ApplyConfiguration(new ApplicationUserConfiguration());
+            builder.ApplyConfiguration(new OutboxMessageConfiguration());
         }
     }
 }

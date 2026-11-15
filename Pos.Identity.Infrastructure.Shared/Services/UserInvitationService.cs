@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Pos.Identity.Infrastructure.Persistence.Context;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Pos.Identity.Application.Exceptions;
 using Pos.Identity.Application.Interfaces.Services;
@@ -15,18 +16,21 @@ namespace Pos.Identity.Infrastructure.Shared.Services
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ICurrentUserService _currentUserService;
-        private readonly IEmailService _emailService;
+        private readonly IEmailRequestService _emailRequestService;
+        private readonly ApplicationDbContext _context;
         private readonly ILogger<UserInvitationService> _logger;
 
         public UserInvitationService(
             UserManager<ApplicationUser> userManager,
             ICurrentUserService currentUserService,
-            IEmailService emailService,
-            ILogger<UserInvitationService> logger)
+            IEmailRequestService emailRequestService,
+            ILogger<UserInvitationService> logger,
+            ApplicationDbContext context)
         {
             _userManager = userManager;
             _currentUserService = currentUserService;
-            _emailService = emailService;
+            _emailRequestService = emailRequestService;
+            _context = context;
             _logger = logger;
         }
 
@@ -56,6 +60,8 @@ namespace Pos.Identity.Infrastructure.Shared.Services
 
             var temporaryPassword = GenerateTemporaryPassword();
             var expiresAt = DateTime.UtcNow.AddHours(24);
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
             var hasPassword = await _userManager.HasPasswordAsync(targetUser);
 
@@ -111,18 +117,20 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                 throw new ApiException($"Failed to update invitation state: {errors}");
             }
 
-            var portalName = GetPortalName(targetUser);
-
-            await _emailService.ResendUserInvitationEmailAsync(
+            await _emailRequestService.RequestInvitationResendEmailAsync(
+                targetUser.TenantId,
+                targetUser.Id,
                 targetUser.Email!,
                 targetUser.FullName,
                 temporaryPassword,
                 expiresAt,
-                portalName,
                 cancellationToken);
 
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
             _logger.LogInformation(
-                "Invitation resent successfully. TargetUserId: {TargetUserId}, Email: {Email}, ByUserId: {CurrentUserId}",
+                "Invitation email queued successfully. TargetUserId: {TargetUserId}, Email: {Email}, ByUserId: {CurrentUserId}",
                 targetUser.Id,
                 targetUser.Email,
                 currentUser.Id);
@@ -230,13 +238,6 @@ namespace Pos.Identity.Infrastructure.Shared.Services
 
             if (!isTenantOwner && targetIsTenantAdmin)
                 throw new ApiException("Only TenantOwner can resend invitation to tenant admins.");
-        }
-
-        private static string GetPortalName(ApplicationUser targetUser)
-        {
-            return targetUser.UserType == UserTypes.Platform
-                ? "Vendora Platform Admin Portal"
-                : "Vendora POS";
         }
 
         private static string GenerateTemporaryPassword()
