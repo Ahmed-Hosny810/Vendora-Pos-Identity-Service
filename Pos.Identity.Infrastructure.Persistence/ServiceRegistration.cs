@@ -9,7 +9,6 @@ using Pos.Identity.Domain.Models;
 using Pos.Identity.Infrastructure.Persistence.Constants;
 using Pos.Identity.Infrastructure.Persistence.Context;
 using Pos.Identity.Infrastructure.Persistence.Seeders;
-using SendGrid;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Pos.Identity.Infrastructure.Persistence
@@ -42,6 +41,8 @@ namespace Pos.Identity.Infrastructure.Persistence
             services.AddScoped<Pos.Identity.Application.Interfaces.Services.IUserNameLookupService, Pos.Identity.Infrastructure.Persistence.Services.UserNameLookupService>();
             services.AddScoped<Pos.Identity.Application.Interfaces.Services.INotificationRecipientService,
                 Pos.Identity.Infrastructure.Persistence.Services.NotificationRecipientService>();
+            services.AddScoped<Pos.Identity.Application.Interfaces.Repositories.IOutboxRepositoryAsync,
+                Pos.Identity.Infrastructure.Persistence.Repositories.OutboxRepositoryAsync>();
             services.AddHostedService<OpenIddictSeeder>();
 
             return services;

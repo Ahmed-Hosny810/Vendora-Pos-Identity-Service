@@ -1,4 +1,6 @@
-﻿using Pos.Identity.Application.Exceptions;
+using Microsoft.Extensions.Options;
+using Pos.Identity.Infrastructure.Persistence.Context;
+using Pos.Identity.Application.Exceptions;
 using Pos.Identity.Application.Interfaces.Services;
 using Pos.Identity.Application.Wrappers;
 using Pos.Identity.Domain.Constants;
@@ -15,17 +17,22 @@ namespace Pos.Identity.Infrastructure.Shared.Services
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
-        private readonly IEmailService _emailService;
+        private readonly IEmailRequestService _emailRequestService;
+        private readonly ApplicationDbContext _context;
+        private readonly TimeSpan _tokenLifetime;
         private readonly ILogger<UserAuthenticationService> _logger;
         private readonly ICurrentUserService _currentUserService;
 
         public UserAuthenticationService(UserManager<ApplicationUser> userManager,
-        SignInManager<ApplicationUser> signInManager, IEmailService emailService, 
-        ILogger<UserAuthenticationService> logger,ICurrentUserService currentUserService)
+        SignInManager<ApplicationUser> signInManager, IEmailRequestService emailRequestService, 
+        ILogger<UserAuthenticationService> logger,ICurrentUserService currentUserService,
+        ApplicationDbContext context, IOptions<DataProtectionTokenProviderOptions> tokenOptions)
         {
             _userManager = userManager;
             _signInManager = signInManager;
-            _emailService = emailService;
+            _emailRequestService = emailRequestService;
+            _context = context;
+            _tokenLifetime = tokenOptions.Value.TokenLifespan;
             _logger = logger;
             _currentUserService = currentUserService;
         }
@@ -55,12 +62,14 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                 UserType = UserTypes.PendingTenant,
                 TenantId = null,
                 IsActive = true,
-                EmailConfirmed=true,
+                EmailConfirmed = false,
                 CreatedAt = DateTime.UtcNow
             };
                 
             ValidateUserContext(user);
 
+            // UserManager saves immediately; the transaction includes the outbox save.
+            await using var transaction = await _context.Database.BeginTransactionAsync();
             var result = await _userManager.CreateAsync(user, password);
             if (!result.Succeeded)
             {
@@ -70,12 +79,17 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                 email,errors);
                 throw new ApiException($"Registration failed: {errors}");
             }
+            var expiresAt = DateTime.UtcNow.Add(_tokenLifetime);
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            await _emailRequestService.RequestConfirmationEmailAsync(
+                user.TenantId, user.Id, user.Email!, token, expiresAt);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
             _logger.LogInformation(
            "User registered successfully. UserId: {UserId} Email: {Email}",
            user.Id, email);
 
-            //var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            //await _emailService.SendConfirmationEmailAsync(user.Email, user.Id, token);
 
             return new Response<string>(user.Id, "Registration successful. Please check your email to confirm your account.");
         }
@@ -216,8 +230,11 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                 return new Response<string>("If this email is registered you will receive a reset link.");
             }
 
+            var expiresAt = DateTime.UtcNow.Add(_tokenLifetime);
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            await _emailService.SendPasswordResetEmailAsync(user.Email, user.Id, token);
+            await _emailRequestService.RequestPasswordResetEmailAsync(
+                user.TenantId, user.Id, user.Email!, token, expiresAt);
+            await _context.SaveChangesAsync();
 
             return new Response<string>(data: "If this email is registered you will receive a reset link.");
         }

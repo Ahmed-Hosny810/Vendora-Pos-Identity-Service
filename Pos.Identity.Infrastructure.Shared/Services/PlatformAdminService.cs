@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Pos.Identity.Infrastructure.Persistence.Context;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Pos.Identity.Application.Exceptions;
 using Pos.Identity.Application.Features.PlatformAdmins.Commands;
@@ -20,20 +21,23 @@ namespace Pos.Identity.Infrastructure.Shared.Services
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ILogger<PlatformAdminService> _logger;
         private readonly ICurrentUserService _currentUserService;
-        private readonly IEmailService _emailService;
+        private readonly IEmailRequestService _emailRequestService;
+        private readonly ApplicationDbContext _context;
 
         public PlatformAdminService(
             UserManager<ApplicationUser> userManager,
             RoleManager<IdentityRole> roleManager,
             ILogger<PlatformAdminService> logger,
             ICurrentUserService currentUserService,
-            IEmailService emailService)
+            IEmailRequestService emailRequestService,
+            ApplicationDbContext context)
         {
             _userManager = userManager;
             _roleManager = roleManager;
             _logger = logger;
             _currentUserService = currentUserService;
-            _emailService = emailService;
+            _emailRequestService = emailRequestService;
+            _context = context;
         }
 
         public async Task<CreatePlatformAdminResult> CreatePlatformAdminAsync(
@@ -103,7 +107,6 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            var userCreated = false;
 
             try
             {
@@ -112,6 +115,8 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                     request.Email,
                     request.Role,
                     currentUser.Id);
+
+                await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
                 var createResult = await _userManager.CreateAsync(
                     user,
@@ -129,7 +134,6 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                     throw new ApiException($"Platform admin creation failed: {errors}");
                 }
 
-                userCreated = true;
 
                 var roleResult = await _userManager.AddToRoleAsync(
                     user,
@@ -148,12 +152,16 @@ namespace Pos.Identity.Infrastructure.Shared.Services
                     throw new ApiException($"Adding role failed: {errors}");
                 }
 
-                await _emailService.SendPlatformAdminInvitationEmailAsync(
+                await _emailRequestService.RequestPlatformAdminInvitationEmailAsync(
+                    user.Id,
                     user.Email!,
                     user.FullName,
                     temporaryPassword,
                     temporaryPasswordExpiresAt,
                     cancellationToken);
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
 
                 _logger.LogInformation(
                     "Platform admin created successfully. UserId: {UserId}, Email: {Email}, Role: {Role}",
@@ -169,20 +177,7 @@ namespace Pos.Identity.Infrastructure.Shared.Services
             }
             catch
             {
-                if (userCreated)
-                {
-                    var deleteResult = await _userManager.DeleteAsync(user);
-
-                    if (!deleteResult.Succeeded)
-                    {
-                        var errors = string.Join(", ", deleteResult.Errors.Select(e => e.Description));
-
-                        _logger.LogError(
-                            "Failed to delete platform admin after creation failure. UserId: {UserId}, Errors: {Errors}",
-                            user.Id,
-                            errors);
-                    }
-                }
+                _context.ChangeTracker.Clear();
 
                 throw;
             }

@@ -19,7 +19,7 @@ The service owns identity data. Business services such as Tenant Billing, Invent
 - Support the pending-tenant onboarding lifecycle.
 - Create and manage tenant users without crossing tenant boundaries.
 - Create and manage platform administrators using platform role rules.
-- Send confirmation, password-reset, and invitation emails through SendGrid.
+- Queue confirmation, password-reset, and invitation email requests in the Identity outbox.
 - Enforce temporary-password expiry and mandatory first-login password changes.
 - Track MVP login state with `IsLoggedIn` and `LastAccessedAt`.
 
@@ -66,7 +66,7 @@ Pos.Identity.IntegrationTests # Service/API integration tests
 - Entity Framework Core and SQL Server
 - OpenIddict server, EF Core stores, and validation stack
 - MediatR and FluentValidation
-- SendGrid for transactional email
+- Outbox email requests for delivery by NotificationService (delivery pending)
 - Google and Facebook authentication when configured
 - xUnit and FluentAssertions for tests
 - SQL Server LocalDB or SQL Server Testcontainers for production-like integration tests
@@ -329,14 +329,10 @@ Keep non-secret defaults in `appsettings.json` and secrets in user-secrets, envi
     "TemporaryPasswordHours": 24,
     "ConcurrentLoginWindowMinutes": 20
   },
-  "EmailSettings": {
-    "ApiKey": "set-with-user-secrets-or-environment-variable",
-    "FromEmail": "no-reply@example.com",
-    "FromName": "Vendora",
-    "AppBaseUrl": "https://localhost:7001",
-    "ApiVersion": "v1",
-    "ConfirmationTokenExpiryHours": 24,
-    "PasswordResetTokenExpiryHours": 1
+  "IdentityEmailLinks": {
+    "ConfirmationUrl": "<identity-confirmation-endpoint>",
+    "ResetPasswordUrl": "<frontend-reset-password-page>",
+    "LoginUrl": "<shared-login-page>"
   },
   "Authentication": {
     "Google": {
@@ -361,7 +357,7 @@ Common secret setup:
 ```bash
 dotnet user-secrets init --project Pos.Identity.WebApi
 dotnet user-secrets set "ConnectionStrings:DefaultConnection" "<connection-string>" --project Pos.Identity.WebApi
-dotnet user-secrets set "EmailSettings:ApiKey" "<sendgrid-key>" --project Pos.Identity.WebApi
+Configure IdentityEmailLinks using your deployed HTTPS routes.
 ```
 
 Use HTTPS and an issuer URL that exactly matches the externally visible Identity URL. Configure allowed CORS origins and OpenIddict redirect URIs explicitly; do not use wildcards in production.
@@ -392,7 +388,7 @@ Prerequisites:
 
 - matching .NET SDK
 - SQL Server, SQL Server Express, or LocalDB
-- a SendGrid key, or a development email implementation
+- configured IdentityEmailLinks and the applied outbox migration
 - HTTPS development certificate
 - Tenant Billing running when testing the full onboarding workflow
 
@@ -490,3 +486,82 @@ Other microservices
 ├── Bearer-token validation using Identity issuer/discovery
 └── Their own tenant-scoped business authorization and data
 ```
+
+## Email request contract and outbox
+
+EmailRequestedV1 is the durable notification request contract. Its routing key is
+identity.email.requested.v1 and EventType is EmailRequestedV1. TenantId is nullable
+for pending-tenant signups and platform accounts. RecipientUserId uses Identity's
+string ID; RecipientEmail is the intended destination, including unverified addresses
+for confirmation. TemplateCode/Language select a platform template, TemplateValues
+supply text values, OccurredAt is UTC and optional ExpiresAt is the UTC send deadline.
+Identity remains responsible for security-token generation and validation.
+
+When staging an email request, use the same EventId as OutboxMessage.Id and preserve
+it on publication retries. A deliberate resend gets a new EventId. The future request
+service must validate the contract and save the outbox row with account changes in
+the same Identity database transaction. AddAsync only stages, without saving.
+GetPendingIdsAsync selects due unpublished records across all tenants; GetByIdAsync
+loads a tracked record for publication progress.
+
+AddIdentityOutbox creates the table/index and has not been automatically applied.
+The Identity callers now stage requests. The publisher is implemented; NotificationService email delivery remains pending. Do not log payloads containing account-action links or temporary credentials.
+
+## Staging Identity email requests
+
+IEmailRequestService is the outbox-based replacement for direct delivery. It reuses
+the existing confirmation/reset/invitation purposes, selects platform template codes,
+and supplies link/invitation values rather than constructing HTML. Methods return the
+staged EventId. They do not save or send. Callers must commit with user changes in the
+same transaction, including UserManager saves. Repeated publisher attempts must use
+the persisted event ID; a deliberate resend calls the request service again.
+
+Configure IdentityEmailLinks: ConfirmationUrl, ResetPasswordUrl, LoginUrl. ResetPasswordUrl should target the frontend password-entry page.
+Links must use HTTPS except loopback development. Tokens are Base64Url encoded to
+match the current Identity decoding. Pass an explicit future UTC expiry consistent
+with token/invitation validity. All templates currently use en.
+Codes: EMAILCONFIRMATION, PASSWORDRESET, TENANTUSERINVITATION,
+PLATFORMADMININVITATION, USERINVITATIONRESEND.
+Common values: Email, ExpiresAt; confirmation: ConfirmationUrl; reset:
+ResetPasswordUrl; invitations: FullName, TemporaryPassword, PortalName, LoginUrl.
+
+Registration, forgot-password, staff/admin invitations and invitation resends now use
+IEmailRequestService. Direct SendGrid delivery has been removed. Registration creates
+an unconfirmed account. User changes and their email requests commit in one database
+transaction; password-reset requests only require an outbox save.
+Confirmation/reset send deadlines use the configured DataProtectionTokenProviderOptions
+TokenLifespan, matching the current default token provider.
+Apply the outbox migration and configure all three IdentityEmailLinks before using
+these flows. No email is delivered until publishing is enabled and NotificationService email delivery is ready.
+Temporary passwords are retained for compatibility with the current invitation model.
+These payloads contain sensitive action links/credentials: do not log them and
+establish storage protection/retention before production cutover.
+
+All invitations use the shared LoginUrl and PortalName value "Vendora", including platform administrators and resends.
+
+## Identity outbox publishing
+
+OutboxPublisherWorker polls due IDs and creates a fresh scope for each message.
+OutboxDispatcher publishes the stored payload and saves PublishedAt only after broker
+confirmation. RabbitMqEventPublisher uses a durable topic exchange, persistent messages,
+publisher confirmation tracking and mandatory routing, matching the Sales pattern.
+The polling interval is measured in seconds.
+
+Publishing defaults to disabled. Configure RabbitMq credentials using secrets or
+environment variables, apply AddIdentityOutbox if needed, then set OutboxPublisher:Enabled
+to true. Identity declares identity.events; the consumer/deployment must declare a
+durable queue bound to identity.email.requested.v1 before publication is enabled.
+Identity does not create consumer queues.
+
+Failures increment AttemptCount, store a safe error type in LastError and schedule
+exponential backoff capped at MaxRetryDelaySeconds. After MaxAttempts the row remains
+unpublished for investigation; it is excluded from automatic retries. After fixing
+the cause, an operator can reset AttemptCount and NextAttemptAt on that existing row
+to retry with the same event ID. Review ExpiresAt before replaying old email requests;
+expired action links require a new request, not a resend of the old payload.
+The future email consumer must enforce ExpiresAt before delivery.
+
+Delivery is at least once. A crash after broker acceptance but before the local save,
+or multiple publisher instances, can cause redelivery. NotificationService must deduplicate
+by EventId. PublishedAt records broker acceptance, not successful email delivery.
+No new migration is needed for this publisher: it uses the existing outbox fields.
